@@ -153,13 +153,21 @@ fi
 # Step 3: Push to ACR
 if [ "$SKIP_PUSH" = false ]; then
     log_step "Step 3: Pushing to ACR"
-    log_info "Authenticating with ACR..."
-    if ! az acr login --name "$ACR_NAME" 2>/dev/null; then
-        log_warning "az acr login failed, trying admin credentials..."
-        ACR_USER=$(az acr credential show --name "$ACR_NAME" --query username -o tsv)
-        ACR_PASS=$(az acr credential show --name "$ACR_NAME" --query "passwords[0].value" -o tsv)
-        echo "$ACR_PASS" | docker login "$ACR_SERVER" -u "$ACR_USER" --password-stdin
+    log_info "Authenticating with ACR using admin credentials..."
+    
+    # Always use admin credentials (more reliable than az acr login)
+    ACR_USER=$(az acr credential show --name "$ACR_NAME" --query username -o tsv 2>/dev/null)
+    ACR_PASS=$(az acr credential show --name "$ACR_NAME" --query "passwords[0].value" -o tsv 2>/dev/null)
+    
+    if [ -z "$ACR_USER" ] || [ -z "$ACR_PASS" ]; then
+        log_error "Failed to get ACR credentials. Ensure admin user is enabled:"
+        echo "  az acr update --name $ACR_NAME --admin-enabled true"
+        exit 1
     fi
+    
+    docker logout "$ACR_SERVER" 2>/dev/null || true
+    echo "$ACR_PASS" | docker login "$ACR_SERVER" -u "$ACR_USER" --password-stdin
+    
     log_info "Pushing image..."
     docker push "${FULL_IMAGE_NAME}:${IMAGE_TAG}"
     log_success "Image pushed to ${ACR_SERVER}"
@@ -175,8 +183,20 @@ if [ "$SKIP_DEPLOY" = false ]; then
     cd "$REMOTE_AZD_DIR"
     log_info "Running azd up..."
     azd up
-    cd "$ROOT_DIR"
     log_success "Deployment completed"
+    
+    # Show deployment outputs
+    log_step "Step 5: Deployment Information"
+    log_info "Azure environment values:"
+    echo ""
+    azd env get-values | while IFS='=' read -r key value; do
+        # Remove quotes from value
+        value="${value%\"}"
+        value="${value#\"}"
+        printf "  %-35s %s\n" "${key}:" "${value}"
+    done
+    echo ""
+    cd "$ROOT_DIR"
 else
     log_warning "Skipping deployment (--skip-deploy)"
 fi
@@ -193,5 +213,5 @@ echo ""
 log_info "Next steps:"
 echo "  1. Verify deployment in Azure Portal"
 echo "  2. Test new tools: auth context get/set, resourcegraph query"
-echo "  3. Configure MCP client to connect"
+echo "  3. Configure MCP client to connect using the MCP_ENDPOINT above"
 echo ""

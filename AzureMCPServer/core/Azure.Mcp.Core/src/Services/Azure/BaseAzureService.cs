@@ -132,8 +132,9 @@ public abstract class BaseAzureService
 
     protected async Task<string?> ResolveTenantIdAsync(string? tenant, CancellationToken cancellationToken)
     {
-        if (tenant == null)
-            return tenant;
+        // Handle both null and empty string (agents may pass "" instead of null)
+        if (string.IsNullOrEmpty(tenant))
+            return null;
         return await TenantService.GetTenantId(tenant, cancellationToken);
     }
 
