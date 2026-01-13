@@ -1,0 +1,107 @@
+parameters:
+- name: ServerName
+  type: string
+- name: IncludeNative
+  type: boolean
+- name: PackageDocker
+  type: boolean
+- name: PackageVSIX
+  type: boolean
+- name: IsTestPipeline
+  type: boolean
+
+jobs:
+- job: TagRepository
+  displayName: "Create release tag"
+  condition: and(succeeded(), ne(variables['Skip.TagRepository'], 'true'))
+  steps:
+  - checkout: self
+
+  - download: current
+    displayName: "Download binaries_signed_zipped"
+    artifact: binaries_signed_zipped
+
+  - download: current
+    displayName: "Download build_info"
+    artifact: build_info
+
+  - template: /eng/common/pipelines/templates/steps/retain-run.yml
+
+  - pwsh: |
+      $buildInfoPath = "$(Pipeline.Workspace)/build_info/build_info.json"
+      $buildInfo = Get-Content -Raw -Path $buildInfoPath | ConvertFrom-Json
+
+      $serverName = '${{ parameters.ServerName }}'
+      $server = $buildInfo.servers | Where-Object { $_.name -eq $serverName } | Select-Object -First 1
+      if (-not $server) {
+        Write-Error "Server '$serverName' not found in build info."
+        exit 1
+      }
+
+      $version = $server.version
+      $tag = $server.releaseTag
+
+      gh release create $tag --title "$serverName $version"
+      gh release upload $tag $(Pipeline.Workspace)/binaries_signed_zipped/*.zip
+    displayName: Create GitHub Release and upload artifacts
+    env:
+      GH_TOKEN: $(azuresdk-github-pat)
+
+- template: /eng/pipelines/templates/jobs/publish-symbols.yml
+
+- template: /eng/pipelines/templates/jobs/npm/release-npm.yml
+  parameters:
+    ServerName: ${{ parameters.ServerName }}
+    IncludeNative: ${{ parameters.IncludeNative }}
+    DependsOn: TagRepository
+
+- template: /eng/pipelines/templates/jobs/nuget/release-nuget.yml
+  parameters:
+    ServerName: ${{ parameters.ServerName }}
+    DependsOn: TagRepository
+
+- ${{ if parameters.PackageVSIX }}:
+  - template: /eng/pipelines/templates/jobs/vsix/release-vsix.yml
+    parameters:
+      ServerName: ${{ parameters.ServerName }}
+      DependsOn: TagRepository
+
+- ${{ if parameters.PackageDocker }}:
+  - template: /eng/pipelines/templates/jobs/docker/release-docker.yml
+    parameters:
+      ContainerRegistry: 'azuresdkimages'
+      DeploymentEnvironment: 'public'
+      ServerName: ${{ parameters.ServerName }}
+      DependsOn: TagRepository
+
+- template: /eng/pipelines/templates/jobs/update-mcp-repository.yml
+  parameters:
+    ServerName: ${{ parameters.ServerName }}
+    DependsOn:
+    - PublishNugetPackage
+    - PublishNpm
+
+- job: UpdatePackageVersion
+  displayName: "Update Package Versions"
+  condition: and(succeeded(), ne(variables['Skip.UpdatePackageVersion'], 'true'))
+  dependsOn: TagRepository
+  steps:
+  - checkout: self
+
+  # Apply the version increment to each library, which updates the Cargo.toml and changelog files.
+  - task: PowerShell@2
+    displayName: Increment version
+    inputs:
+      pwsh: true
+      targetType: filePath
+      filePath: $(Build.SourcesDirectory)/eng/scripts/Update-Version.ps1
+      arguments: >
+        -ServerName '${{ parameters.ServerName }}'
+
+  - template: /eng/common/pipelines/templates/steps/create-pull-request.yml
+    parameters:
+      PRBranchName: increment-package-version-$(Build.BuildId)
+      CommitMsg: "Increment package version after release"
+      PRTitle: "Increment version after release"
+      RepoOwner: microsoft
+      CloseAfterOpenForTesting: ${{ parameters.IsTestPipeline }}

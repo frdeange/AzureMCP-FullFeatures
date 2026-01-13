@@ -1,0 +1,57 @@
+parameters:
+- name: NugetDevFeed
+  type: string
+  default: 'public/azure-sdk-for-net'
+- name: NpmRegistry
+  type: string
+  default: 'https://pkgs.dev.azure.com/azure-sdk/public/_packaging/azure-sdk-for-js/npm/registry/'
+
+jobs:
+- job: PublishToDev
+  displayName: Publish packages to dev feeds
+  condition: and(succeeded(), ne(variables['Skip.PublishPackage'], 'true'))
+  pool:
+    # On linux, we'd need mono to run nuget, so just use windows
+    name: $(WINDOWSPOOL)
+    image: $(WINDOWSVMIMAGE)
+    os: windows
+  steps:
+  - checkout: self
+
+  - download: current
+    displayName: "Download build_info"
+    artifact: build_info
+
+  - download: current
+    displayName: Download packages_npm
+    artifact: packages_npm
+
+  - download: current
+    displayName: Download packages_nuget_signed
+    artifact: packages_nuget_signed
+
+  - template: /eng/pipelines/templates/steps/publish-to-dev-feed.yml
+    parameters:
+      PathToArtifacts: $(Pipeline.Workspace)/packages_npm
+      Registry: ${{ parameters.NpmRegistry }}
+      ${{ if and(eq(variables['Build.SourceBranch'], 'refs/heads/main'), eq(variables['Build.Reason'], 'IndividualCI')) }}:
+        Tag: dev
+      ${{ else }}:
+        Tag: pre
+
+  - task: 1ES.PublishNuget@1
+    displayName: Publish Nuget packages to dev feed
+    inputs:
+      packageParentPath: '$(Pipeline.Workspace)'
+      packagesToPush: '$(Pipeline.Workspace)/packages_nuget_signed/**/*.nupkg;!$(Pipeline.Workspace)/packages_nuget_signed/**/*.symbols.nupkg'
+      publishVstsFeed: ${{ parameters.NugetDevFeed }}
+
+  - task: PowerShell@2
+    displayName: 'Attach usage instructions to build summary'
+    inputs:
+      pwsh: true
+      targetType: 'filePath'
+      filePath: 'eng/scripts/Get-PackageUsageText.ps1'
+      arguments: >
+        -BuildInfoPath '$(Pipeline.Workspace)/build_info/build_info.json'
+        -NpmRegistry '${{ parameters.NpmRegistry }}'

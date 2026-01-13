@@ -1,0 +1,95 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT License.
+
+using Azure.Mcp.Core.Commands.Subscription;
+using Azure.Mcp.Core.Extensions;
+using Azure.Mcp.Tools.KeyVault.Options;
+using Azure.Mcp.Tools.KeyVault.Options.Key;
+using Azure.Mcp.Tools.KeyVault.Services;
+using Microsoft.Extensions.Logging;
+using Microsoft.Mcp.Core.Commands;
+using Microsoft.Mcp.Core.Models.Command;
+
+namespace Azure.Mcp.Tools.KeyVault.Commands.Key;
+
+public sealed class KeyGetCommand(ILogger<KeyGetCommand> logger) : SubscriptionCommand<KeyGetOptions>
+{
+    private const string CommandTitle = "Get Key Vault Key";
+    private readonly ILogger<KeyGetCommand> _logger = logger;
+
+    public override string Id => "c19a45a0-b963-427d-a087-35560a7f4e5b";
+
+    public override string Name => "get";
+
+    public override string Title => CommandTitle;
+
+    public override ToolMetadata Metadata => new()
+    {
+        Destructive = false,
+        Idempotent = true,
+        OpenWorld = false,
+        ReadOnly = true,
+        LocalRequired = false,
+        Secret = false
+    };
+
+    public override string Description =>
+        "Get/retrieve/show details for a single key in a Key Vault (latest version). Not for listing multiple keys. Required: --vault <vault>, --key <key> --subscription <subscription>. Optional: --tenant <tenant>. Returns: name, id, keyId, keyType, enabled, notBefore, expiresOn, createdOn, updatedOn.";
+
+    protected override void RegisterOptions(Command command)
+    {
+        base.RegisterOptions(command);
+        command.Options.Add(KeyVaultOptionDefinitions.VaultName);
+        command.Options.Add(KeyVaultOptionDefinitions.KeyName);
+    }
+
+    protected override KeyGetOptions BindOptions(ParseResult parseResult)
+    {
+        var options = base.BindOptions(parseResult);
+        options.VaultName = parseResult.GetValueOrDefault<string>(KeyVaultOptionDefinitions.VaultName.Name);
+        options.KeyName = parseResult.GetValueOrDefault<string>(KeyVaultOptionDefinitions.KeyName.Name);
+        return options;
+    }
+
+    public override async Task<CommandResponse> ExecuteAsync(CommandContext context, ParseResult parseResult, CancellationToken cancellationToken)
+    {
+        if (!Validate(parseResult.CommandResult, context.Response).IsValid)
+        {
+            return context.Response;
+        }
+
+        var options = BindOptions(parseResult);
+
+        try
+        {
+            var keyVaultService = context.GetService<IKeyVaultService>();
+            var key = await keyVaultService.GetKey(
+                options.VaultName!,
+                options.KeyName!,
+                options.Subscription!,
+                options.Tenant,
+                options.RetryPolicy,
+                cancellationToken);
+
+            context.Response.Results = ResponseResult.Create(
+                new(
+                    key.Name,
+                    key.KeyType.ToString(),
+                    key.Properties.Enabled,
+                    key.Properties.NotBefore,
+                    key.Properties.ExpiresOn,
+                    key.Properties.CreatedOn,
+                    key.Properties.UpdatedOn),
+                KeyVaultJsonContext.Default.KeyGetCommandResult);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error getting key {KeyName} from vault {VaultName}", options.KeyName, options.VaultName);
+            HandleException(context, ex);
+        }
+
+        return context.Response;
+    }
+
+    internal record KeyGetCommandResult(string Name, string KeyType, bool? Enabled, DateTimeOffset? NotBefore, DateTimeOffset? ExpiresOn, DateTimeOffset? CreatedOn, DateTimeOffset? UpdatedOn);
+}

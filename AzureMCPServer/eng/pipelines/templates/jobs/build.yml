@@ -1,0 +1,130 @@
+parameters:
+# required matrix parameters
+- name: TestTimeoutInMinutes
+  type: number
+- name: ServerName
+  type: string
+- name: PublishTarget
+  type: string
+- name: OSName
+  type: string
+- name: Matrix
+  type: string
+- name: MaxParallel
+  type: number
+
+jobs:
+- job: Build_${{ parameters.OSName }}
+  displayName: "Build"
+  condition: and(succeeded(), ne(${{ parameters.Matrix }}, '{}'))
+  strategy:
+    maxParallel: ${{ parameters.MaxParallel }}
+    matrix: $[ ${{ parameters.Matrix }} ]
+  pool:
+    name: $(Pool)
+    ${{ if eq(parameters.OSName, 'macOS') }}:
+      vmImage: $(OSVmImage)
+    ${{ else }}:
+      image: $(OSVmImage)
+    os: ${{ parameters.OSName }}
+
+  # Only run codeql on linux internal build jobs to reduce overall time on pipeline
+  ${{ if and(eq(parameters.OSName, 'linux'), eq(variables['System.TeamProject'], 'internal')) }}:
+    templateContext:
+      sdl:
+        codeql:
+          compiled:
+            enabled: true
+
+  steps:
+  - download: current
+    artifact: build_info
+    displayName: 'Download build info artifact'
+
+  - checkout: self
+
+  - task: UseDotNet@2
+    displayName: "Use .NET SDK from global.json"
+    retryCountOnTaskFailure: 3
+    inputs:
+      useGlobalJson: true
+
+  - task: UseDotNet@2
+    displayName: "Use .NET SDK 9.0.x"
+    retryCountOnTaskFailure: 3
+    inputs:
+      packageType: sdk
+      version: 9.0.x
+
+  - task: Powershell@2
+    displayName: "Build code"
+    condition: and(succeeded(), ne(variables['NoPackagesChanged'],'true'))
+    inputs:
+      pwsh: true
+      filePath: $(Build.SourcesDirectory)/eng/scripts/Build-Code.ps1
+      arguments: >
+        -BuildInfoPath '$(Pipeline.Workspace)/build_info/build_info.json'
+        -OutputPath '$(Build.ArtifactStagingDirectory)'
+        -ServerName '${{ parameters.ServerName }}'
+        -PlatformName '$(BuildPlatformName)'
+        -ReleaseBuild:$${{ ne(parameters.PublishTarget, 'none') }}
+        -SelfContained
+        -SingleFile
+
+  - task: Powershell@2
+    displayName: "Run unit tests"
+    condition: and(succeeded(), eq(variables['RunUnitTests'], 'true'))
+    timeoutInMinutes: ${{ parameters.TestTimeoutInMinutes }}
+    inputs:
+      pwsh: true
+      filePath:  $(Build.SourcesDirectory)/eng/scripts/Test-Code.ps1
+      arguments: >
+        -CollectCoverage:$${{ eq(parameters.OSName, 'linux') }}
+        -TestResultsPath '$(Build.ArtifactStagingDirectory)/testResults'
+      workingDirectory: $(Build.SourcesDirectory)
+    env:
+      AZURE_MCP_COLLECT_TELEMETRY: 'false'
+
+  - task: Powershell@2
+    displayName: "Run recorded tests"
+    condition: and(succeeded(), eq(variables['RunRecordedTests'], 'true'))
+    timeoutInMinutes: ${{ parameters.TestTimeoutInMinutes }}
+    inputs:
+      pwsh: true
+      filePath:  $(Build.SourcesDirectory)/eng/scripts/Test-Code.ps1
+      arguments: >
+        -TestType 'Recorded'
+        -TestResultsPath '$(Build.ArtifactStagingDirectory)/recordedTestResults'
+        -ScopingBuildInfoPath '$(Pipeline.Workspace)/build_info/build_info.json'
+      workingDirectory: $(Build.SourcesDirectory)
+    env:
+      AZURE_MCP_COLLECT_TELEMETRY: 'false'
+
+  - task: PublishTestResults@2
+    displayName: "Publish Results"
+    condition: and(succeededOrFailed(), eq(variables['RunUnitTests'], 'true'))
+    inputs:
+      testResultsFiles: "$(Build.ArtifactStagingDirectory)/testResults/*.trx"
+      testRunTitle: "unit_$(System.JobName)"
+      testResultsFormat: "VSTest"
+      mergeTestResults: true
+
+  - task: PublishTestResults@2
+    displayName: "Publish Recorded Test Results"
+    condition: and(succeededOrFailed(), eq(variables['RunRecordedTests'], 'true'))
+    inputs:
+      testResultsFiles: "$(Build.ArtifactStagingDirectory)/recordedTestResults/*.trx"
+      testRunTitle: "recorded_$(System.JobName)"
+      testResultsFormat: "VSTest"
+      mergeTestResults: true
+
+  - task: PublishCodeCoverageResults@2
+    displayName: "Publish Code Coverage Reports"
+    condition: and(succeededOrFailed(), eq(variables['RunUnitTests'], 'true'), eq('${{ parameters.OSName }}', 'linux'))
+    inputs:
+      summaryFileLocation: $(CoverageFile)
+
+  - template: /eng/common/pipelines/templates/steps/publish-1es-artifact.yml
+    parameters:
+      ArtifactPath: $(Build.ArtifactStagingDirectory)
+      ArtifactName: binaries_$(System.JobName)

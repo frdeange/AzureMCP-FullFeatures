@@ -1,0 +1,71 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT License.
+
+using Azure.Mcp.Tools.LoadTesting.Models.LoadTestResource;
+using Azure.Mcp.Tools.LoadTesting.Options.LoadTestResource;
+using Azure.Mcp.Tools.LoadTesting.Services;
+using Microsoft.Extensions.Logging;
+using Microsoft.Mcp.Core.Commands;
+using Microsoft.Mcp.Core.Models.Command;
+
+namespace Azure.Mcp.Tools.LoadTesting.Commands.LoadTestResource;
+
+public sealed class TestResourceListCommand(ILogger<TestResourceListCommand> logger)
+    : BaseLoadTestingCommand<TestResourceListOptions>
+{
+    private const string _commandTitle = "Test Resource List";
+    private readonly ILogger<TestResourceListCommand> _logger = logger;
+    public override string Id => "eb44ef6c-93dc-4fa1-949c-a5e8939d5052";
+    public override string Name => "list";
+    public override string Description =>
+        $"""
+        Lists all Azure Load Testing resources available in the selected subscription and resource group.
+        Returns metadata for each resource, including name, location, and status. Use this to discover, manage, or audit load testing resources in your environment. Does not return test plans or test runs.
+        """;
+    public override string Title => _commandTitle;
+
+    public override ToolMetadata Metadata => new()
+    {
+        Destructive = false,
+        Idempotent = true,
+        OpenWorld = false,
+        ReadOnly = true,
+        LocalRequired = false,
+        Secret = false
+    };
+
+    public override async Task<CommandResponse> ExecuteAsync(CommandContext context, ParseResult parseResult, CancellationToken cancellationToken)
+    {
+        if (!Validate(parseResult.CommandResult, context.Response).IsValid)
+        {
+            return context.Response;
+        }
+
+        var options = BindOptions(parseResult);
+
+        try
+        {
+            // Get the appropriate service from DI
+            var service = context.GetService<ILoadTestingService>();
+            // Call service operation(s)
+            var results = await service.GetLoadTestResourcesAsync(
+                options.Subscription!,
+                options.ResourceGroup,
+                options.TestResourceName,
+                options.Tenant,
+                options.RetryPolicy,
+                cancellationToken);
+            // Set results if any were returned
+            context.Response.Results = ResponseResult.Create(new(results ?? []), LoadTestJsonContext.Default.TestResourceListCommandResult);
+        }
+        catch (Exception ex)
+        {
+            // Log error with context information
+            _logger.LogError(ex, "Error in {Operation}. Options: {Options}", Name, options);
+            // Let base class handle standard error processing
+            HandleException(context, ex);
+        }
+        return context.Response;
+    }
+    internal record TestResourceListCommandResult(List<TestResource> LoadTest);
+}

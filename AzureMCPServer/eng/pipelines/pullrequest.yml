@@ -1,0 +1,14 @@
+pr:
+  branches:
+    include:
+      - main
+      - feature/*
+      - hotfix/*
+      - release/*
+
+trigger: none
+
+extends:
+  template: /eng/pipelines/templates/common.yml
+  parameters:
+    RunLiveTests: ${{ eq(variables['System.TeamProject'], 'internal') }}

@@ -1,0 +1,60 @@
+parameters:
+- name: ServerName
+  type: string
+- name: PublishTarget
+  type: string
+- name: IncludeNative
+  type: boolean
+- name: IsTestPipeline
+  type: boolean
+
+jobs:
+- job: Initialize
+  timeoutInMinutes: 90
+  steps:
+  - checkout: self
+    fetchDepth: 0
+
+  - task: UseDotNet@2
+    displayName: "Use .NET SDK from global.json"
+    retryCountOnTaskFailure: 3
+    inputs:
+      useGlobalJson: true
+
+  - pwsh: |
+      Write-Host "Attaching build reason string to the build for additional tag generation."
+      @('$(Build.Reason)') | ConvertTo-Json -AsArray | Out-File -FilePath $(System.DefaultWorkingDirectory)/build-reason.json -Encoding utf8
+      Write-Host '##vso[task.addattachment type=AdditionalTags;name=AdditionalTags;]$(System.DefaultWorkingDirectory)/build-reason.json'
+    displayName: Tag build reason
+
+  - task: Powershell@2
+    displayName: "Create build info file"
+    name: CreateBuildInfo
+    inputs:
+      pwsh: true
+      filePath: $(Build.SourcesDirectory)/eng/scripts/New-BuildInfo.ps1
+      arguments: >
+        -PublishTarget '${{ parameters.PublishTarget }}'
+        -BuildId '$(Build.BuildId)'
+        -OutputPath '$(Build.ArtifactStagingDirectory)/build_info.json'
+        -ServerName '${{ parameters.ServerName }}'
+        -IncludeNative:$${{ parameters.IncludeNative }}
+        -TestPipeline:$${{ parameters.IsTestPipeline }}
+
+  - ${{ if ne(parameters.PublishTarget, 'none') }}:
+      # We only create server.json if we're going to publish
+    - task: Powershell@2
+      displayName: "Create server json file"
+      name: CreateServerJson
+      inputs:
+        pwsh: true
+        filePath: $(Build.SourcesDirectory)/eng/scripts/New-ServerJson.ps1
+        arguments: >
+          -ServerName '${{ parameters.ServerName }}'
+          -BuildInfoPath '$(Build.ArtifactStagingDirectory)/build_info.json'
+          -OutputPath '$(Build.ArtifactStagingDirectory)/${{ parameters.ServerName }}/server.json'
+
+  - template: /eng/common/pipelines/templates/steps/publish-1es-artifact.yml
+    parameters:
+      ArtifactPath: $(Build.ArtifactStagingDirectory)
+      ArtifactName: build_info
