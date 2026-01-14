@@ -15,6 +15,12 @@ param aiHubPrincipalId string = ''
 @description('Principal ID of the AI Project managed identity')
 param aiProjectPrincipalId string = ''
 
+@description('Principal ID of the AI Search managed identity')
+param aiSearchPrincipalId string = ''
+
+@description('Principal ID of the deployer (user running the deployment)')
+param deployerPrincipalId string = ''
+
 @description('Storage Account ID')
 param storageAccountId string
 
@@ -29,6 +35,9 @@ param aiSearchServiceId string = ''
 
 @description('Key Vault ID')
 param keyVaultId string = ''
+
+@description('Communication Service ID')
+param communicationServiceId string = ''
 
 // ============================================================================
 // Built-in Role Definition IDs
@@ -48,7 +57,6 @@ var roles = {
   
   // Cosmos DB roles
   cosmosDbAccountReader: 'fbdf93bf-df7d-467e-a4d2-9458aa1360c8'
-  cosmosDbDataContributor: '00000000-0000-0000-0000-000000000002' // Built-in Cosmos DB data plane role
   documentDbAccountContributor: '5bd9cd88-fe45-4216-938b-f97437e15450'
   
   // AI Search roles
@@ -60,9 +68,7 @@ var roles = {
   keyVaultSecretsUser: '4633458b-17de-408a-b874-0445c86b69e6'
   keyVaultSecretsOfficer: 'b86a8fe4-44ce-4948-aee5-eccb2c155cd7'
   keyVaultCryptoUser: '12338af0-0e69-4776-bea7-57ae8d297424'
-  
-  // Monitoring roles
-  monitoringMetricsPublisher: '3913510d-42f4-4e42-8a64-420c390055eb'
+  keyVaultAdministrator: '00482a5a-887f-4fb3-b363-3b7fe8e74483'
   
   // Cognitive Services / AI roles
   cognitiveServicesUser: 'a97b65f3-24c7-4388-baec-2e87135dc908'
@@ -71,6 +77,34 @@ var roles = {
   // General
   reader: 'acdd72a7-3385-48ef-bd42-f606fba81ae7'
   contributor: 'b24988ac-6180-42a0-ab88-20f7382dd24c'
+}
+
+// ============================================================================
+// Existing Resource References
+// ============================================================================
+
+resource storageAccount 'Microsoft.Storage/storageAccounts@2023-01-01' existing = if (!empty(storageAccountId)) {
+  name: last(split(storageAccountId, '/'))
+}
+
+resource containerRegistry 'Microsoft.ContainerRegistry/registries@2023-07-01' existing = if (!empty(containerRegistryId)) {
+  name: last(split(containerRegistryId, '/'))
+}
+
+resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' existing = if (!empty(keyVaultId)) {
+  name: last(split(keyVaultId, '/'))
+}
+
+resource aiSearchService 'Microsoft.Search/searchServices@2023-11-01' existing = if (!empty(aiSearchServiceId)) {
+  name: last(split(aiSearchServiceId, '/'))
+}
+
+resource cosmosDbAccount 'Microsoft.DocumentDB/databaseAccounts@2024-05-15' existing = if (!empty(cosmosDbAccountId)) {
+  name: last(split(cosmosDbAccountId, '/'))
+}
+
+resource communicationService 'Microsoft.Communication/communicationServices@2023-04-01' existing = if (!empty(communicationServiceId)) {
+  name: last(split(communicationServiceId, '/'))
 }
 
 // ============================================================================
@@ -100,7 +134,6 @@ resource aiHubStorageFileContributor 'Microsoft.Authorization/roleAssignments@20
 
 // ============================================================================
 // AI Project -> Storage Account
-// AI Project also needs storage access for experiments
 // ============================================================================
 
 resource aiProjectStorageBlobContributor 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (!empty(aiProjectPrincipalId) && !empty(storageAccountId)) {
@@ -115,7 +148,6 @@ resource aiProjectStorageBlobContributor 'Microsoft.Authorization/roleAssignment
 
 // ============================================================================
 // AI Hub -> Container Registry
-// AI Hub needs to push/pull container images for models
 // ============================================================================
 
 resource aiHubAcrPush 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (!empty(aiHubPrincipalId) && !empty(containerRegistryId)) {
@@ -128,6 +160,21 @@ resource aiHubAcrPush 'Microsoft.Authorization/roleAssignments@2022-04-01' = if 
   }
 }
 
+// AI Hub also needs Reader to list repos/tags
+resource aiHubAcrReader 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (!empty(aiHubPrincipalId) && !empty(containerRegistryId)) {
+  name: guid(containerRegistryId, aiHubPrincipalId, roles.reader)
+  scope: containerRegistry
+  properties: {
+    principalId: aiHubPrincipalId
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', roles.reader)
+    principalType: 'ServicePrincipal'
+  }
+}
+
+// ============================================================================
+// AI Project -> Container Registry
+// ============================================================================
+
 resource aiProjectAcrPull 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (!empty(aiProjectPrincipalId) && !empty(containerRegistryId)) {
   name: guid(containerRegistryId, aiProjectPrincipalId, roles.acrPull)
   scope: containerRegistry
@@ -138,9 +185,19 @@ resource aiProjectAcrPull 'Microsoft.Authorization/roleAssignments@2022-04-01' =
   }
 }
 
+// AI Project also needs Reader to list repos/tags
+resource aiProjectAcrReader 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (!empty(aiProjectPrincipalId) && !empty(containerRegistryId)) {
+  name: guid(containerRegistryId, aiProjectPrincipalId, roles.reader)
+  scope: containerRegistry
+  properties: {
+    principalId: aiProjectPrincipalId
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', roles.reader)
+    principalType: 'ServicePrincipal'
+  }
+}
+
 // ============================================================================
 // AI Hub -> Key Vault
-// AI Hub needs to read/write secrets for API keys, connection strings
 // ============================================================================
 
 resource aiHubKeyVaultSecretsOfficer 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (!empty(aiHubPrincipalId) && !empty(keyVaultId)) {
@@ -165,7 +222,6 @@ resource aiProjectKeyVaultSecretsUser 'Microsoft.Authorization/roleAssignments@2
 
 // ============================================================================
 // AI Hub -> AI Search
-// AI Hub needs to query and index data in AI Search for RAG scenarios
 // ============================================================================
 
 resource aiHubSearchContributor 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (!empty(aiHubPrincipalId) && !empty(aiSearchServiceId)) {
@@ -190,7 +246,6 @@ resource aiProjectSearchReader 'Microsoft.Authorization/roleAssignments@2022-04-
 
 // ============================================================================
 // AI Hub -> Cosmos DB
-// AI Hub needs access for conversation history, agent state, etc.
 // ============================================================================
 
 resource aiHubCosmosContributor 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (!empty(aiHubPrincipalId) && !empty(cosmosDbAccountId)) {
@@ -204,36 +259,83 @@ resource aiHubCosmosContributor 'Microsoft.Authorization/roleAssignments@2022-04
 }
 
 // ============================================================================
-// AI Search -> Storage Account
-// AI Search needs blob access for indexer data sources
+// AI Hub -> Communication Service
+// AI Hub needs to send emails/SMS
 // ============================================================================
 
-// Note: If you need AI Search to index blobs, you'd create a system-assigned
-// identity on AI Search and grant it Storage Blob Data Reader role.
-// This is typically done when setting up indexers.
+resource aiHubCommunicationContributor 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (!empty(aiHubPrincipalId) && !empty(communicationServiceId)) {
+  name: guid(communicationServiceId, aiHubPrincipalId, roles.contributor)
+  scope: communicationService
+  properties: {
+    principalId: aiHubPrincipalId
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', roles.contributor)
+    principalType: 'ServicePrincipal'
+  }
+}
+
+resource aiProjectCommunicationContributor 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (!empty(aiProjectPrincipalId) && !empty(communicationServiceId)) {
+  name: guid(communicationServiceId, aiProjectPrincipalId, roles.contributor)
+  scope: communicationService
+  properties: {
+    principalId: aiProjectPrincipalId
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', roles.contributor)
+    principalType: 'ServicePrincipal'
+  }
+}
 
 // ============================================================================
-// Existing Resource References
+// AI Search -> Storage Account (for RAG indexing)
+// AI Search needs to read blobs to index documents
 // ============================================================================
 
-resource storageAccount 'Microsoft.Storage/storageAccounts@2023-01-01' existing = if (!empty(storageAccountId)) {
-  name: last(split(storageAccountId, '/'))
+resource aiSearchStorageBlobReader 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (!empty(aiSearchPrincipalId) && !empty(storageAccountId)) {
+  name: guid(storageAccountId, aiSearchPrincipalId, roles.storageBlobDataReader)
+  scope: storageAccount
+  properties: {
+    principalId: aiSearchPrincipalId
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', roles.storageBlobDataReader)
+    principalType: 'ServicePrincipal'
+  }
 }
 
-resource containerRegistry 'Microsoft.ContainerRegistry/registries@2023-07-01' existing = if (!empty(containerRegistryId)) {
-  name: last(split(containerRegistryId, '/'))
+// ============================================================================
+// Deployer -> Container Registry
+// User running the deployment needs to push images and list repos
+// ============================================================================
+
+resource deployerAcrPush 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (!empty(deployerPrincipalId) && !empty(containerRegistryId)) {
+  name: guid(containerRegistryId, deployerPrincipalId, roles.acrPush)
+  scope: containerRegistry
+  properties: {
+    principalId: deployerPrincipalId
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', roles.acrPush)
+    principalType: 'User'
+  }
 }
 
-resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' existing = if (!empty(keyVaultId)) {
-  name: last(split(keyVaultId, '/'))
+resource deployerAcrReader 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (!empty(deployerPrincipalId) && !empty(containerRegistryId)) {
+  name: guid(containerRegistryId, deployerPrincipalId, roles.reader)
+  scope: containerRegistry
+  properties: {
+    principalId: deployerPrincipalId
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', roles.reader)
+    principalType: 'User'
+  }
 }
 
-resource aiSearchService 'Microsoft.Search/searchServices@2023-11-01' existing = if (!empty(aiSearchServiceId)) {
-  name: last(split(aiSearchServiceId, '/'))
-}
+// ============================================================================
+// Deployer -> Key Vault
+// User running deployment may need to create secrets
+// ============================================================================
 
-resource cosmosDbAccount 'Microsoft.DocumentDB/databaseAccounts@2024-05-15' existing = if (!empty(cosmosDbAccountId)) {
-  name: last(split(cosmosDbAccountId, '/'))
+resource deployerKeyVaultAdmin 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (!empty(deployerPrincipalId) && !empty(keyVaultId)) {
+  name: guid(keyVaultId, deployerPrincipalId, roles.keyVaultAdministrator)
+  scope: keyVault
+  properties: {
+    principalId: deployerPrincipalId
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', roles.keyVaultAdministrator)
+    principalType: 'User'
+  }
 }
 
 // ============================================================================
@@ -247,8 +349,13 @@ output roleAssignmentsSummary object = {
   aiHubToKeyVault: !empty(aiHubPrincipalId) && !empty(keyVaultId)
   aiHubToSearch: !empty(aiHubPrincipalId) && !empty(aiSearchServiceId)
   aiHubToCosmos: !empty(aiHubPrincipalId) && !empty(cosmosDbAccountId)
+  aiHubToCommunication: !empty(aiHubPrincipalId) && !empty(communicationServiceId)
   aiProjectToStorage: !empty(aiProjectPrincipalId) && !empty(storageAccountId)
   aiProjectToAcr: !empty(aiProjectPrincipalId) && !empty(containerRegistryId)
   aiProjectToKeyVault: !empty(aiProjectPrincipalId) && !empty(keyVaultId)
   aiProjectToSearch: !empty(aiProjectPrincipalId) && !empty(aiSearchServiceId)
+  aiProjectToCommunication: !empty(aiProjectPrincipalId) && !empty(communicationServiceId)
+  aiSearchToStorage: !empty(aiSearchPrincipalId) && !empty(storageAccountId)
+  deployerToAcr: !empty(deployerPrincipalId) && !empty(containerRegistryId)
+  deployerToKeyVault: !empty(deployerPrincipalId) && !empty(keyVaultId)
 }

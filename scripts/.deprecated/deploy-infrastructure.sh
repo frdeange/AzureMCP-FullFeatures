@@ -296,6 +296,16 @@ show_summary() {
 }
 
 generate_parameters_file() {
+    # Get deployer principal ID for RBAC
+    local deployer_id
+    deployer_id=$(az ad signed-in-user show --query id -o tsv 2>/dev/null || echo "")
+    
+    if [ -n "$deployer_id" ]; then
+        log_info "Deployer Principal ID: $deployer_id"
+    else
+        log_warning "Could not get deployer principal ID - RBAC for deployer will be skipped"
+    fi
+    
     cat > "$TEMP_PARAMS_FILE" << EOF
 {
   "\$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
@@ -319,7 +329,8 @@ generate_parameters_file() {
     "searchServiceSku": { "value": "$SEARCH_SKU" },
     "createContainerAppsEnvironment": { "value": $CREATE_ACA },
     "createAIFoundry": { "value": $CREATE_AI_FOUNDRY },
-    "createCommunicationService": { "value": $CREATE_COMM }
+    "createCommunicationService": { "value": $CREATE_COMM },
+    "deployerPrincipalId": { "value": "$deployer_id" }
   }
 }
 EOF

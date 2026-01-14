@@ -36,6 +36,9 @@ resource searchService 'Microsoft.Search/searchServices@2024-06-01-preview' = {
   name: name
   location: location
   tags: tags
+  identity: {
+    type: 'SystemAssigned'
+  }
   sku: {
     name: sku
   }
@@ -45,6 +48,11 @@ resource searchService 'Microsoft.Search/searchServices@2024-06-01-preview' = {
     hostingMode: hostingMode
     publicNetworkAccess: publicNetworkAccess
     semanticSearch: sku != 'free' ? 'standard' : 'disabled'
+    authOptions: {
+      aadOrApiKey: {
+        aadAuthFailureMode: 'http401WithBearerChallenge'
+      }
+    }
   }
 }
 
@@ -56,6 +64,9 @@ output searchServiceName string = searchService.name
 
 @description('The endpoint for the Search service')
 output endpoint string = 'https://${searchService.name}.search.windows.net'
+
+@description('The principal ID of the Search service managed identity')
+output principalId string = searchService.identity.principalId
 
 // Note: Keys should be retrieved via Azure CLI or Key Vault reference in production
 // These outputs are commented out to avoid security warnings

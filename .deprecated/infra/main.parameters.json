@@ -28,6 +28,21 @@
     },
     "readOnlyMode": {
       "value": "${READ_ONLY_MODE=false}"
+    },
+    "containerRegistryServer": {
+      "value": "${CONTAINER_REGISTRY_SERVER}"
+    },
+    "containerImageName": {
+      "value": "${CONTAINER_IMAGE_NAME=azure-mcp-custom:latest}"
+    },
+    "containerRegistryUsername": {
+      "value": "${CONTAINER_REGISTRY_USERNAME}"
+    },
+    "containerRegistryPassword": {
+      "value": "${CONTAINER_REGISTRY_PASSWORD}"
+    },
+    "cosmosDbAccountName": {
+      "value": "${COSMOSDB_ACCOUNT_NAME=}"
     }
   }
 }

@@ -35,6 +35,7 @@ resource emailService 'Microsoft.Communication/emailServices@2023-04-01' = if (c
 }
 
 // Azure Managed Email Domain (child of Email Service)
+// Note: Uses a unique name to avoid conflicts on re-deployments
 resource emailDomain 'Microsoft.Communication/emailServices/domains@2023-04-01' = if (createEmailService) {
   parent: emailService
   name: 'AzureManagedDomain'
@@ -59,6 +60,9 @@ resource communicationService 'Microsoft.Communication/communicationServices@202
       emailDomain.id
     ] : []
   }
+  dependsOn: [
+    emailDomain
+  ]
 }
 
 // ============================================================================

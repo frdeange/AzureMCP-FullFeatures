@@ -5,6 +5,9 @@
     "projectName": {
       "value": "distriplatform"
     },
+    "aiFoundrySuffix": {
+      "value": "v2"
+    },
     "location": {
       "value": "swedencentral"
     },
@@ -38,6 +41,21 @@
     },
     "createCommunicationService": {
       "value": true
+    },
+    "deployMcpServer": {
+      "value": false,
+      "metadata": {
+        "description": "Set to true to deploy MCP Server (requires image in ACR first)"
+      }
+    },
+    "mcpReadOnlyMode": {
+      "value": false,
+      "metadata": {
+        "description": "Enable read-only mode (safer for production)"
+      }
+    },
+    "mcpContainerImage": {
+      "value": "azure-mcp-custom:latest"
     }
   }
 }
