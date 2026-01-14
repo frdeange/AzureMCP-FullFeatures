@@ -27,3 +27,8 @@ generated/
 eng/tools/ToolDescriptionEvaluator/prompts.json
 eng/tools/ToolDescriptionEvaluator/results.md
 eng/tools/ToolDescriptionEvaluator/tools.json
+
+# Compiled ARM templates (Bicep outputs)
+infrastructure/**/*.json
+!infrastructure/**/bicepconfig.json
+!infrastructure/**/parameters.json
