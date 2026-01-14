@@ -43,7 +43,6 @@ WHAT_IF=false
 IMAGE_NAME="azure-mcp-custom"
 IMAGE_TAG="latest"
 MCP_READ_ONLY=false
-AI_FOUNDRY_SUFFIX="v1"
 RESOURCE_SUFFIX=""
 INTERACTIVE_MODE=true
 
@@ -81,7 +80,6 @@ show_help() {
     echo "  --mcp-only            Only deploy MCP Server (skip infrastructure)"
     echo "  --image-tag TAG       Docker image tag (default: latest)"
     echo "  --mcp-read-only       Deploy MCP in read-only mode"
-    echo "  --ai-suffix SUFFIX    AI Foundry suffix for naming (default: v1)"
     echo "  --what-if             Preview deployment without making changes"
     echo "  --help, -h            Show this help message"
     echo ""
@@ -111,7 +109,6 @@ while [[ $# -gt 0 ]]; do
         --mcp-only) MCP_ONLY=true; DEPLOY_MCP=true; shift ;;
         --image-tag) IMAGE_TAG="$2"; shift 2 ;;
         --mcp-read-only) MCP_READ_ONLY=true; shift ;;
-        --ai-suffix) AI_FOUNDRY_SUFFIX="$2"; shift 2 ;;
         --what-if) WHAT_IF=true; shift ;;
         --help|-h) show_help ;;
         *) log_error "Unknown option: $1"; show_help ;;
@@ -265,7 +262,7 @@ show_deployment_summary() {
     echo -e "  • ${PROJECT_NAME}-${RESOURCE_SUFFIX}-search   ${DIM}(AI Search)${NC}"
     echo -e "  • ${PROJECT_NAME}${RESOURCE_SUFFIX}acr        ${DIM}(Container Registry)${NC}"
     echo -e "  • ${PROJECT_NAME}-${RESOURCE_SUFFIX}-kv       ${DIM}(Key Vault)${NC}"
-    echo -e "  • ${PROJECT_NAME}-aifoundry-${AI_FOUNDRY_SUFFIX}  ${DIM}(AI Foundry)${NC}"
+    echo -e "  • ${PROJECT_NAME}-${RESOURCE_SUFFIX}-aifoundry ${DIM}(AI Foundry)${NC}"
     if [ "$DEPLOY_MCP" = true ]; then
         echo -e "  • ${PROJECT_NAME}-${RESOURCE_SUFFIX}-mcp  ${DIM}(MCP Container App)${NC}"
     fi
@@ -443,7 +440,6 @@ deploy_infrastructure() {
         --parameters projectName=\"$full_project_name\" \
         --parameters resourceGroupName=\"$RESOURCE_GROUP\" \
         --parameters location=\"$LOCATION\" \
-        --parameters aiFoundrySuffix=\"$AI_FOUNDRY_SUFFIX\" \
         --parameters deployMcpServer=false"
     
     # Add deployer principal if available
@@ -540,7 +536,7 @@ deploy_mcp_server() {
         --parameters projectName=\"$full_project_name\" \
         --parameters resourceGroupName=\"$RESOURCE_GROUP\" \
         --parameters location=\"$LOCATION\" \
-        --parameters aiFoundrySuffix=\"$AI_FOUNDRY_SUFFIX\" \
+
         --parameters deployMcpServer=true \
         --parameters mcpContainerImage=\"${IMAGE_NAME}:${IMAGE_TAG}\" \
         --parameters mcpReadOnlyMode=$MCP_READ_ONLY \
@@ -577,7 +573,7 @@ print_final_summary() {
     echo -e "  🔍 AI Search:         ${full_project_name}-search"
     echo -e "  📦 Container Registry: ${full_project_name//[^a-zA-Z0-9]/}acr"
     echo -e "  🔐 Key Vault:         ${full_project_name//[^a-zA-Z0-9]/}kv"
-    echo -e "  🧠 AI Foundry:        ${full_project_name}-aifoundry-${AI_FOUNDRY_SUFFIX}"
+    echo -e "  🧠 AI Foundry:        ${full_project_name}-aifoundry"
     
     if [ "$DEPLOY_MCP" = true ]; then
         echo -e "  🖥️  MCP Server:        ${full_project_name}-mcp"

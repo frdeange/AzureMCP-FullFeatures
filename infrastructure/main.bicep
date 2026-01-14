@@ -13,8 +13,8 @@ targetScope = 'subscription'
 @description('Name prefix for all resources')
 param projectName string = 'distriplatform'
 
-@description('Suffix for AI Foundry resources (use to avoid conflicts with stuck resources)')
-param aiFoundrySuffix string = 'v1'
+@description('Suffix for AI Foundry naming (optional, uses projectName pattern if empty)')
+param aiFoundrySuffix string = ''
 
 @description('Location for all resources')
 param location string = 'swedencentral'
@@ -234,8 +234,8 @@ module aiFoundry 'modules/ai-foundry.bicep' = if (createAIFoundry) {
   name: 'deploy-ai-foundry'
   scope: rg
   params: {
-    hubName: '${projectName}-aifoundry-${aiFoundrySuffix}'
-    projectName: '${projectName}-aiproject-${aiFoundrySuffix}'
+    hubName: empty(aiFoundrySuffix) ? '${projectName}-aifoundry' : '${projectName}-aifoundry-${aiFoundrySuffix}'
+    projectName: empty(aiFoundrySuffix) ? '${projectName}-aiproject' : '${projectName}-aiproject-${aiFoundrySuffix}'
     location: location
     tags: tags
     storageAccountId: storageAccount.outputs.storageAccountId
