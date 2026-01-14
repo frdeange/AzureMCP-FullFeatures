@@ -1,0 +1,43 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "projectName": {
+      "value": "distriplatform"
+    },
+    "location": {
+      "value": "swedencentral"
+    },
+    "resourceGroupName": {
+      "value": "RG-DistriAgentPlatform"
+    },
+    "tags": {
+      "value": {
+        "project": "DistriAgentPlatform",
+        "environment": "dev",
+        "managedBy": "bicep"
+      }
+    },
+    "storageAccountSku": {
+      "value": "Standard_LRS"
+    },
+    "containerRegistrySku": {
+      "value": "Basic"
+    },
+    "cosmosDbConsistencyLevel": {
+      "value": "Session"
+    },
+    "searchServiceSku": {
+      "value": "basic"
+    },
+    "createContainerAppsEnvironment": {
+      "value": true
+    },
+    "createAIFoundry": {
+      "value": true
+    },
+    "createCommunicationService": {
+      "value": true
+    }
+  }
+}
