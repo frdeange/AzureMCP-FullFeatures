@@ -166,8 +166,8 @@ prompt_project_name() {
             continue
         fi
         
-        if [ ${#PROJECT_NAME} -gt 15 ]; then
-            log_error "Name must be max 15 characters (to avoid Azure limits)"
+        if [ ${#PROJECT_NAME} -gt 12 ]; then
+            log_error "Name must be max 12 characters (Storage Account limit: 24 chars)"
             continue
         fi
         
@@ -239,6 +239,94 @@ prompt_deploy_mcp() {
     fi
 }
 
+prompt_existing_project() {
+    echo ""
+    echo -e "${BOLD}📦 Connect to Existing Infrastructure${NC}"
+    echo -e "${DIM}Enter the details of your existing deployment${NC}"
+    echo ""
+    
+    # Project name
+    while true; do
+        echo -ne "${BOLD}Existing project name: ${NC}"
+        read -r PROJECT_NAME
+        
+        if [ -z "$PROJECT_NAME" ]; then
+            log_error "Project name is required"
+            continue
+        fi
+        break
+    done
+    
+    # Resource suffix
+    echo -ne "${BOLD}Resource suffix (4 chars used during deployment): ${NC}"
+    read -r RESOURCE_SUFFIX
+    
+    if [ -z "$RESOURCE_SUFFIX" ]; then
+        log_error "Resource suffix is required to find existing resources"
+        exit 1
+    fi
+    
+    # Resource group
+    local default_rg="RG-${PROJECT_NAME^}-${RESOURCE_SUFFIX}"
+    echo -e "Expected Resource Group: ${YELLOW}$default_rg${NC}"
+    echo -ne "${BOLD}Use this Resource Group? [Y/n] or type different: ${NC}"
+    read -r rg_input
+    
+    if [ -z "$rg_input" ] || [[ "$rg_input" =~ ^[Yy]$ ]]; then
+        RESOURCE_GROUP="$default_rg"
+    else
+        RESOURCE_GROUP="$rg_input"
+    fi
+    
+    # Verify ACR exists
+    local full_project_name="${PROJECT_NAME}-${RESOURCE_SUFFIX}"
+    local acr_name="${full_project_name//[^a-zA-Z0-9]/}acr"
+    
+    echo ""
+    log_info "Verifying infrastructure exists..."
+    
+    if ! az acr show --name "$acr_name" &>/dev/null; then
+        log_error "ACR '$acr_name' not found. Please check project name and suffix."
+        exit 1
+    fi
+    
+    log_success "Found ACR: $acr_name"
+}
+
+show_mcp_only_summary() {
+    local full_project_name="${PROJECT_NAME}-${RESOURCE_SUFFIX}"
+    # Container App names must be lowercase
+    local container_app_name=$(echo "${full_project_name}-mcp" | tr '[:upper:]' '[:lower:]')
+    local acr_name=$(echo "${full_project_name//[^a-zA-Z0-9]/}acr" | tr '[:upper:]' '[:lower:]')
+    
+    echo ""
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${BOLD}📋 MCP Server Deployment${NC}"
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo ""
+    echo -e "  ${BOLD}Project:${NC}         $PROJECT_NAME"
+    echo -e "  ${BOLD}Suffix:${NC}          $RESOURCE_SUFFIX"
+    echo -e "  ${BOLD}Resource Group:${NC}  $RESOURCE_GROUP"
+    echo -e "  ${BOLD}Image Tag:${NC}       $IMAGE_TAG"
+    echo -e "  ${BOLD}Read-Only Mode:${NC}  $([ "$MCP_READ_ONLY" = true ] && echo "${GREEN}Yes${NC}" || echo "${YELLOW}No${NC}")"
+    echo ""
+    echo -e "${BOLD}Actions to perform:${NC}"
+    echo -e "  1. Build .NET project (AzureMCPServer)"
+    echo -e "  2. Create Docker image"
+    echo -e "  3. Push to ACR: ${acr_name}"
+    echo -e "  4. Deploy/Update Container App: ${container_app_name}"
+    echo ""
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo ""
+    echo -ne "${BOLD}Confirm and proceed? [Y/n]: ${NC}"
+    read -r confirm
+    
+    if [[ "$confirm" =~ ^[Nn]$ ]]; then
+        log_warning "Deployment cancelled"
+        exit 0
+    fi
+}
+
 show_deployment_summary() {
     echo ""
     echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
@@ -262,8 +350,13 @@ show_deployment_summary() {
     echo -e "  • ${PROJECT_NAME}-${RESOURCE_SUFFIX}-search   ${DIM}(AI Search)${NC}"
     echo -e "  • ${PROJECT_NAME}${RESOURCE_SUFFIX}acr        ${DIM}(Container Registry)${NC}"
     echo -e "  • ${PROJECT_NAME}-${RESOURCE_SUFFIX}-kv       ${DIM}(Key Vault)${NC}"
-    echo -e "  • ${PROJECT_NAME}-${RESOURCE_SUFFIX}-aifoundry ${DIM}(AI Foundry)${NC}"
+    echo -e "  • ${PROJECT_NAME}-${RESOURCE_SUFFIX}-logs     ${DIM}(Log Analytics)${NC}"
+    echo -e "  • ${PROJECT_NAME}-${RESOURCE_SUFFIX}-appins   ${DIM}(Application Insights)${NC}"
+    echo -e "  • ${PROJECT_NAME}-${RESOURCE_SUFFIX}-comm     ${DIM}(Communication Service)${NC}"
+    echo -e "  • ${PROJECT_NAME}-${RESOURCE_SUFFIX}-aifdry   ${DIM}(AI Foundry Hub)${NC}"
+    echo -e "  • ${PROJECT_NAME}-${RESOURCE_SUFFIX}-aiproj   ${DIM}(AI Foundry Project)${NC}"
     if [ "$DEPLOY_MCP" = true ]; then
+        echo -e "  • ${PROJECT_NAME}-${RESOURCE_SUFFIX}-aca-env ${DIM}(Container Apps Environment)${NC}"
         echo -e "  • ${PROJECT_NAME}-${RESOURCE_SUFFIX}-mcp  ${DIM}(MCP Container App)${NC}"
     fi
     echo ""
@@ -306,14 +399,12 @@ run_interactive_mode() {
                 show_deployment_summary
                 break
                 ;;
-            3)  # MCP only
+            3)  # MCP only (existing infrastructure)
                 DEPLOY_MCP=true
                 MCP_ONLY=true
                 WHAT_IF=false
-                prompt_project_name
-                prompt_resource_suffix
-                prompt_resource_group
-                show_deployment_summary
+                prompt_existing_project
+                show_mcp_only_summary
                 break
                 ;;
             4)  # What-If
@@ -471,11 +562,44 @@ deploy_infrastructure() {
 # ============================================================================
 
 build_and_push_mcp() {
-    log_step "Building Docker Image for MCP Server"
+    log_step "Building MCP Server"
     
     local full_project_name="${PROJECT_NAME}-${RESOURCE_SUFFIX}"
     
-    # Ensure ACR credentials
+    # The MCP Server is in AzureMCPServer/servers/Azure.Mcp.Server/src/
+    local mcp_root="$REPO_ROOT/AzureMCPServer"
+    local mcp_src_dir="$mcp_root/servers/Azure.Mcp.Server/src"
+    local publish_dir="$mcp_src_dir/bin/Release/net9.0/linux-x64/publish"
+    local executable_name="azmcp"
+    local dockerfile_path="$mcp_root/Dockerfile"
+    
+    # Verify MCP project exists
+    if [ ! -d "$mcp_src_dir" ]; then
+        log_error "MCP Server project not found at: $mcp_src_dir"
+        exit 1
+    fi
+    
+    # Step 1: Build and publish the .NET project
+    log_info "Step 1/4: Building .NET project..."
+    cd "$mcp_src_dir"
+    
+    dotnet publish \
+        -c Release \
+        -r linux-x64 \
+        --self-contained true \
+        -p:PublishSingleFile=true \
+        -p:PublishTrimmed=false \
+        -o "$publish_dir"
+    
+    if [ ! -f "$publish_dir/$executable_name" ]; then
+        log_error "Build failed: executable not found at $publish_dir/$executable_name"
+        exit 1
+    fi
+    
+    log_success ".NET build completed"
+    
+    # Step 2: Ensure ACR credentials
+    log_info "Step 2/4: Connecting to ACR..."
     if [ -z "$ACR_SERVER" ]; then
         ACR_NAME="${full_project_name//[^a-zA-Z0-9]/}acr"
         ACR_SERVER=$(az acr show --name "$ACR_NAME" --query loginServer -o tsv)
@@ -486,39 +610,52 @@ build_and_push_mcp() {
         exit 1
     fi
     
+    # Login to ACR
+    az acr login --name "$ACR_NAME"
+    log_success "Connected to ACR: $ACR_SERVER"
+    
+    # Step 3: Build Docker image
+    log_info "Step 3/4: Building Docker image..."
     local full_image="${ACR_SERVER}/${IMAGE_NAME}:${IMAGE_TAG}"
     
-    log_info "Building image: $full_image"
+    if [ ! -f "$dockerfile_path" ]; then
+        log_error "Dockerfile not found at: $dockerfile_path"
+        exit 1
+    fi
     
-    # Build the Docker image
+    # PUBLISH_DIR must be relative to Docker context (mcp_root)
+    local publish_dir_relative="servers/Azure.Mcp.Server/src/bin/Release/net9.0/linux-x64/publish"
+    
     docker build \
         -t "$full_image" \
-        -f "$REPO_ROOT/Dockerfile" \
-        "$REPO_ROOT"
+        -f "$dockerfile_path" \
+        --build-arg PUBLISH_DIR="$publish_dir_relative" \
+        --build-arg EXECUTABLE_NAME="$executable_name" \
+        "$mcp_root"
     
-    log_success "Image built successfully"
+    log_success "Docker image built: $full_image"
     
-    # Login to ACR
-    log_info "Logging in to ACR..."
-    az acr login --name "$ACR_NAME"
-    
-    # Push the image
-    log_info "Pushing image to ACR..."
+    # Step 4: Push to ACR
+    log_info "Step 4/4: Pushing image to ACR..."
     docker push "$full_image"
     
-    log_success "Image pushed: $full_image"
+    log_success "Image pushed to ACR: $full_image"
     
     export FULL_IMAGE_NAME="$full_image"
+    cd "$REPO_ROOT"
 }
 
 # ============================================================================
-# MCP Server Deployment (via Bicep)
+# MCP Server Deployment
 # ============================================================================
 
 deploy_mcp_server() {
     log_step "Deploying MCP Server"
     
     local full_project_name="${PROJECT_NAME}-${RESOURCE_SUFFIX}"
+    # Container App names must be lowercase
+    local container_app_name=$(echo "${full_project_name}-mcp" | tr '[:upper:]' '[:lower:]')
+    local aca_env_name=$(echo "${full_project_name}-aca-env" | tr '[:upper:]' '[:lower:]')
     
     # Get ACR credentials
     ACR_NAME="${full_project_name//[^a-zA-Z0-9]/}acr"
@@ -526,30 +663,79 @@ deploy_mcp_server() {
     ACR_USER=$(az acr credential show --name "$ACR_NAME" --query username -o tsv)
     ACR_PASS=$(az acr credential show --name "$ACR_NAME" --query "passwords[0].value" -o tsv)
     
-    log_info "Deploying MCP to Container Apps..."
+    local full_image="${ACR_SERVER}/${IMAGE_NAME}:${IMAGE_TAG}"
     
-    # Deploy with MCP enabled
-    local deploy_cmd="az deployment sub create \
-        --name \"deploy-mcp-${PROJECT_NAME}-$(date +%Y%m%d%H%M%S)\" \
-        --location \"$LOCATION\" \
-        --template-file \"$INFRA_DIR/main.bicep\" \
-        --parameters projectName=\"$full_project_name\" \
-        --parameters resourceGroupName=\"$RESOURCE_GROUP\" \
-        --parameters location=\"$LOCATION\" \
-
-        --parameters deployMcpServer=true \
-        --parameters mcpContainerImage=\"${IMAGE_NAME}:${IMAGE_TAG}\" \
-        --parameters mcpReadOnlyMode=$MCP_READ_ONLY \
-        --parameters containerRegistryUsername=\"$ACR_USER\" \
-        --parameters containerRegistryPassword=\"$ACR_PASS\""
-    
-    if [ "$WHAT_IF" = true ]; then
-        deploy_cmd+=" --what-if"
-    fi
-    
-    eval "$deploy_cmd"
-    
-    if [ "$WHAT_IF" = false ]; then
+    if [ "$MCP_ONLY" = true ]; then
+        # MCP Only mode: Create or Update Container App directly
+        
+        # Check if Container App exists
+        if az containerapp show --name "$container_app_name" --resource-group "$RESOURCE_GROUP" &>/dev/null; then
+            log_info "Updating existing Container App: $container_app_name"
+            
+            az containerapp update \
+                --name "$container_app_name" \
+                --resource-group "$RESOURCE_GROUP" \
+                --image "$full_image"
+            
+            log_success "MCP Server updated successfully!"
+        else
+            log_info "Container App not found. Creating new one..."
+            
+            # Check if ACA Environment exists
+            if ! az containerapp env show --name "$aca_env_name" --resource-group "$RESOURCE_GROUP" &>/dev/null; then
+                log_info "Creating Container Apps Environment: $aca_env_name"
+                
+                az containerapp env create \
+                    --name "$aca_env_name" \
+                    --resource-group "$RESOURCE_GROUP" \
+                    --location "$LOCATION"
+                
+                log_success "Container Apps Environment created"
+            fi
+            
+            log_info "Creating Container App: $container_app_name"
+            
+            az containerapp create \
+                --name "$container_app_name" \
+                --resource-group "$RESOURCE_GROUP" \
+                --environment "$aca_env_name" \
+                --image "$full_image" \
+                --registry-server "$ACR_SERVER" \
+                --registry-username "$ACR_USER" \
+                --registry-password "$ACR_PASS" \
+                --target-port 8080 \
+                --ingress external \
+                --min-replicas 0 \
+                --max-replicas 3 \
+                --cpu 0.5 \
+                --memory 1Gi \
+                --env-vars "ASPNETCORE_ENVIRONMENT=Production" "MCP_READ_ONLY=$MCP_READ_ONLY"
+            
+            log_success "MCP Server created successfully!"
+        fi
+    else
+        # Full deployment mode: Use Bicep
+        log_info "Deploying MCP via Bicep..."
+        
+        local deploy_cmd="az deployment sub create \
+            --name \"deploy-mcp-${PROJECT_NAME}-$(date +%Y%m%d%H%M%S)\" \
+            --location \"$LOCATION\" \
+            --template-file \"$INFRA_DIR/main.bicep\" \
+            --parameters projectName=\"$full_project_name\" \
+            --parameters resourceGroupName=\"$RESOURCE_GROUP\" \
+            --parameters location=\"$LOCATION\" \
+            --parameters deployMcpServer=true \
+            --parameters mcpContainerImage=\"${IMAGE_NAME}:${IMAGE_TAG}\" \
+            --parameters mcpReadOnlyMode=$MCP_READ_ONLY \
+            --parameters containerRegistryUsername=\"$ACR_USER\" \
+            --parameters containerRegistryPassword=\"$ACR_PASS\""
+        
+        if [ "$WHAT_IF" = true ]; then
+            deploy_cmd+=" --what-if"
+        fi
+        
+        eval "$deploy_cmd"
+        
         log_success "MCP Server deployed successfully!"
     fi
 }
@@ -567,15 +753,20 @@ print_final_summary() {
     echo -e "${GREEN}╚═══════════════════════════════════════════════════════════════════════════════╝${NC}"
     echo ""
     echo -e "${BOLD}Deployed resources:${NC}"
-    echo -e "  📁 Resource Group:    $RESOURCE_GROUP"
-    echo -e "  💾 Storage:           ${full_project_name//[^a-zA-Z0-9]/}storage"
-    echo -e "  🗄️  CosmosDB:          ${full_project_name}-cosmos"
-    echo -e "  🔍 AI Search:         ${full_project_name}-search"
+    echo -e "  📁 Resource Group:     $RESOURCE_GROUP"
+    echo -e "  💾 Storage:            ${full_project_name//[^a-zA-Z0-9]/}storage"
+    echo -e "  🗄️  CosmosDB:           ${full_project_name}-cosmos"
+    echo -e "  🔍 AI Search:          ${full_project_name}-search"
     echo -e "  📦 Container Registry: ${full_project_name//[^a-zA-Z0-9]/}acr"
-    echo -e "  🔐 Key Vault:         ${full_project_name//[^a-zA-Z0-9]/}kv"
-    echo -e "  🧠 AI Foundry:        ${full_project_name}-aifoundry"
+    echo -e "  🔐 Key Vault:          ${full_project_name//[^a-zA-Z0-9]/}kv"
+    echo -e "  📊 Log Analytics:      ${full_project_name}-logs"
+    echo -e "  📈 App Insights:       ${full_project_name}-appins"
+    echo -e "  📧 Communication:      ${full_project_name}-comm"
+    echo -e "  🧠 AI Foundry Hub:     ${full_project_name}-aifdry"
+    echo -e "  📊 AI Foundry Project: ${full_project_name}-aiproj"
     
     if [ "$DEPLOY_MCP" = true ]; then
+        echo -e "  🌐 ACA Environment:   ${full_project_name}-aca-env"
         echo -e "  🖥️  MCP Server:        ${full_project_name}-mcp"
         
         # Try to get MCP URL

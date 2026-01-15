@@ -234,8 +234,8 @@ module aiFoundry 'modules/ai-foundry.bicep' = if (createAIFoundry) {
   name: 'deploy-ai-foundry'
   scope: rg
   params: {
-    hubName: empty(aiFoundrySuffix) ? '${projectName}-aifoundry' : '${projectName}-aifoundry-${aiFoundrySuffix}'
-    projectName: empty(aiFoundrySuffix) ? '${projectName}-aiproject' : '${projectName}-aiproject-${aiFoundrySuffix}'
+    hubName: empty(aiFoundrySuffix) ? '${projectName}-aifdry' : '${projectName}-aifdry-${aiFoundrySuffix}'
+    projectName: empty(aiFoundrySuffix) ? '${projectName}-aiproj' : '${projectName}-aiproj-${aiFoundrySuffix}'
     location: location
     tags: tags
     storageAccountId: storageAccount.outputs.storageAccountId
