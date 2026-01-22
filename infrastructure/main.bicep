@@ -374,6 +374,7 @@ var mcpRoles = {
   searchServiceContributor: '7ca78c08-252a-4471-8644-bb5ff32d4ba0'
   searchIndexDataContributor: '8ebe5a00-799e-43f5-93ac-243d3dce84a7'
   cognitiveServicesContributor: '25fbc0a9-bd7c-42a3-aa1a-3b75d497ee68'
+  communicationServicesContributor: 'b24988ac-6180-42a0-ab88-20f7382dd24c' // Contributor role for Communication Services (email, SMS, etc.)
 }
 
 // Contributor role (primary)
@@ -577,6 +578,17 @@ module mcpRoleCognitiveServices 'modules/mcp-server/subscription-role-assignment
     principalId: mcpContainerApp!.outputs.containerAppPrincipalId
     roleDefinitionId: mcpRoles.cognitiveServicesContributor
     roleDescription: 'MCP Server - Cognitive Services Contributor'
+  }
+}
+
+// Communication Services role (for email, SMS, etc.)
+module mcpRoleCommunicationServices 'modules/mcp-server/subscription-role-assignment.bicep' = if (deployMcpServer) {
+  name: 'mcp-role-communication-services'
+  scope: subscription()
+  params: {
+    principalId: mcpContainerApp!.outputs.containerAppPrincipalId
+    roleDefinitionId: mcpRoles.communicationServicesContributor
+    roleDescription: 'MCP Server - Communication Services Contributor'
   }
 }
 
