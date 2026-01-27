@@ -338,6 +338,279 @@ public class CosmosService(ISubscriptionService subscriptionService, ITenantServ
         }
     }
 
+    public async Task<ItemOperationResult> CreateItemAsync(
+        string accountName,
+        string databaseName,
+        string containerName,
+        string item,
+        string partitionKey,
+        string subscription,
+        AuthMethod authMethod = AuthMethod.Credential,
+        string? tenant = null,
+        RetryPolicyOptions? retryPolicy = null,
+        CancellationToken cancellationToken = default)
+    {
+        ValidateRequiredParameters(
+            (nameof(accountName), accountName),
+            (nameof(databaseName), databaseName),
+            (nameof(containerName), containerName),
+            (nameof(item), item),
+            (nameof(partitionKey), partitionKey),
+            (nameof(subscription), subscription));
+
+        var client = await GetCosmosClientAsync(accountName, subscription, authMethod, tenant, retryPolicy, cancellationToken);
+
+        try
+        {
+            var container = client.GetContainer(databaseName, containerName);
+            using var stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(item));
+
+            var response = await container.CreateItemStreamAsync(
+                stream,
+                new PartitionKey(partitionKey),
+                cancellationToken: cancellationToken);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                if (response.StatusCode == HttpStatusCode.Conflict)
+                {
+                    throw new Exception($"409 Conflict: Item already exists in container '{containerName}'");
+                }
+                throw new Exception($"{(int)response.StatusCode} {response.StatusCode}: {response.ErrorMessage}");
+            }
+
+            // Extract id from the item JSON
+            using var doc = JsonDocument.Parse(item);
+            var id = doc.RootElement.GetProperty("id").GetString() ?? "";
+
+            return new ItemOperationResult(true, id, partitionKey);
+        }
+        catch (CosmosException ex)
+        {
+            throw new Exception($"{(int)ex.StatusCode} {ex.StatusCode}: {ex.Message}", ex);
+        }
+    }
+
+    public async Task<ItemOperationResult> UpsertItemAsync(
+        string accountName,
+        string databaseName,
+        string containerName,
+        string item,
+        string partitionKey,
+        string subscription,
+        AuthMethod authMethod = AuthMethod.Credential,
+        string? tenant = null,
+        RetryPolicyOptions? retryPolicy = null,
+        CancellationToken cancellationToken = default)
+    {
+        ValidateRequiredParameters(
+            (nameof(accountName), accountName),
+            (nameof(databaseName), databaseName),
+            (nameof(containerName), containerName),
+            (nameof(item), item),
+            (nameof(partitionKey), partitionKey),
+            (nameof(subscription), subscription));
+
+        var client = await GetCosmosClientAsync(accountName, subscription, authMethod, tenant, retryPolicy, cancellationToken);
+
+        try
+        {
+            var container = client.GetContainer(databaseName, containerName);
+            using var stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(item));
+
+            var response = await container.UpsertItemStreamAsync(
+                stream,
+                new PartitionKey(partitionKey),
+                cancellationToken: cancellationToken);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                throw new Exception($"{(int)response.StatusCode} {response.StatusCode}: {response.ErrorMessage}");
+            }
+
+            // Extract id from the item JSON
+            using var doc = JsonDocument.Parse(item);
+            var id = doc.RootElement.GetProperty("id").GetString() ?? "";
+
+            return new ItemOperationResult(true, id, partitionKey);
+        }
+        catch (CosmosException ex)
+        {
+            throw new Exception($"{(int)ex.StatusCode} {ex.StatusCode}: {ex.Message}", ex);
+        }
+    }
+
+    public async Task<JsonElement> GetItemAsync(
+        string accountName,
+        string databaseName,
+        string containerName,
+        string itemId,
+        string partitionKey,
+        string subscription,
+        AuthMethod authMethod = AuthMethod.Credential,
+        string? tenant = null,
+        RetryPolicyOptions? retryPolicy = null,
+        CancellationToken cancellationToken = default)
+    {
+        ValidateRequiredParameters(
+            (nameof(accountName), accountName),
+            (nameof(databaseName), databaseName),
+            (nameof(containerName), containerName),
+            (nameof(itemId), itemId),
+            (nameof(partitionKey), partitionKey),
+            (nameof(subscription), subscription));
+
+        var client = await GetCosmosClientAsync(accountName, subscription, authMethod, tenant, retryPolicy, cancellationToken);
+
+        try
+        {
+            var container = client.GetContainer(databaseName, containerName);
+
+            var response = await container.ReadItemStreamAsync(
+                itemId,
+                new PartitionKey(partitionKey),
+                cancellationToken: cancellationToken);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                if (response.StatusCode == HttpStatusCode.NotFound)
+                {
+                    throw new Exception($"404 NotFound: Item '{itemId}' not found in container '{containerName}'");
+                }
+                throw new Exception($"{(int)response.StatusCode} {response.StatusCode}: {response.ErrorMessage}");
+            }
+
+            using var doc = await JsonDocument.ParseAsync(response.Content, cancellationToken: cancellationToken);
+            return doc.RootElement.Clone();
+        }
+        catch (CosmosException ex)
+        {
+            throw new Exception($"{(int)ex.StatusCode} {ex.StatusCode}: {ex.Message}", ex);
+        }
+    }
+
+    public async Task<ItemOperationResult> DeleteItemAsync(
+        string accountName,
+        string databaseName,
+        string containerName,
+        string itemId,
+        string partitionKey,
+        string subscription,
+        AuthMethod authMethod = AuthMethod.Credential,
+        string? tenant = null,
+        RetryPolicyOptions? retryPolicy = null,
+        CancellationToken cancellationToken = default)
+    {
+        ValidateRequiredParameters(
+            (nameof(accountName), accountName),
+            (nameof(databaseName), databaseName),
+            (nameof(containerName), containerName),
+            (nameof(itemId), itemId),
+            (nameof(partitionKey), partitionKey),
+            (nameof(subscription), subscription));
+
+        var client = await GetCosmosClientAsync(accountName, subscription, authMethod, tenant, retryPolicy, cancellationToken);
+
+        try
+        {
+            var container = client.GetContainer(databaseName, containerName);
+
+            var response = await container.DeleteItemStreamAsync(
+                itemId,
+                new PartitionKey(partitionKey),
+                cancellationToken: cancellationToken);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                if (response.StatusCode == HttpStatusCode.NotFound)
+                {
+                    throw new Exception($"404 NotFound: Item '{itemId}' not found in container '{containerName}'");
+                }
+                throw new Exception($"{(int)response.StatusCode} {response.StatusCode}: {response.ErrorMessage}");
+            }
+
+            return new ItemOperationResult(true, itemId, partitionKey);
+        }
+        catch (CosmosException ex)
+        {
+            throw new Exception($"{(int)ex.StatusCode} {ex.StatusCode}: {ex.Message}", ex);
+        }
+    }
+
+    public async Task<ContainerOperationResult> CreateContainerAsync(
+        string accountName,
+        string databaseName,
+        string containerName,
+        string partitionKeyPath,
+        int? throughput,
+        string subscription,
+        AuthMethod authMethod = AuthMethod.Credential,
+        string? tenant = null,
+        RetryPolicyOptions? retryPolicy = null,
+        CancellationToken cancellationToken = default)
+    {
+        ValidateRequiredParameters(
+            (nameof(accountName), accountName),
+            (nameof(databaseName), databaseName),
+            (nameof(containerName), containerName),
+            (nameof(partitionKeyPath), partitionKeyPath),
+            (nameof(subscription), subscription));
+
+        try
+        {
+            // Use ARM SDK to create containers (AOT compatible)
+            var cosmosAccount = await GetCosmosAccountAsync(subscription, accountName, tenant, retryPolicy);
+
+            // Get the SQL database collection and then the specific database
+            var sqlDatabases = cosmosAccount.GetCosmosDBSqlDatabases();
+            var sqlDatabaseResponse = await sqlDatabases.GetAsync(databaseName, cancellationToken);
+            var sqlDatabase = sqlDatabaseResponse.Value;
+
+            // Create container properties
+            var containerData = new CosmosDBSqlContainerCreateOrUpdateContent(
+                cosmosAccount.Data.Location,
+                new CosmosDBSqlContainerResourceInfo(containerName)
+                {
+                    PartitionKey = new CosmosDBContainerPartitionKey
+                    {
+                        Paths = { partitionKeyPath },
+                        Kind = CosmosDBPartitionKind.Hash
+                    }
+                });
+
+            // Add throughput if specified
+            if (throughput.HasValue)
+            {
+                containerData.Options = new CosmosDBCreateUpdateConfig
+                {
+                    Throughput = throughput.Value
+                };
+            }
+
+            // Create the container
+            var containerCollection = sqlDatabase.GetCosmosDBSqlContainers();
+            var operation = await containerCollection.CreateOrUpdateAsync(
+                Azure.WaitUntil.Completed,
+                containerName,
+                containerData,
+                cancellationToken);
+
+            return new ContainerOperationResult(true, containerName, partitionKeyPath);
+        }
+        catch (Azure.RequestFailedException ex) when (ex.Status == 409)
+        {
+            throw new Exception($"409 Conflict: Container '{containerName}' already exists in database '{databaseName}'", ex);
+        }
+        catch (Azure.RequestFailedException ex)
+        {
+            throw new Exception($"{ex.Status} {ex.ErrorCode}: {ex.Message}", ex);
+        }
+        catch (Exception ex)
+        {
+            throw new Exception($"Error creating container: {ex.Message}", ex);
+        }
+    }
+
     protected virtual async void Dispose(bool disposing)
     {
         if (!_disposed)

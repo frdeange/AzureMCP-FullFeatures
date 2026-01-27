@@ -23,6 +23,11 @@ public class CosmosSetup : IAreaSetup
         services.AddSingleton<ContainerListCommand>();
         services.AddSingleton<AccountListCommand>();
         services.AddSingleton<ItemQueryCommand>();
+        services.AddSingleton<ItemCreateCommand>();
+        services.AddSingleton<ItemUpsertCommand>();
+        services.AddSingleton<ItemGetCommand>();
+        services.AddSingleton<ItemDeleteCommand>();
+        services.AddSingleton<ContainerCreateCommand>();
     }
 
     public CommandGroup RegisterCommands(IServiceProvider serviceProvider)
@@ -50,11 +55,28 @@ public class CosmosSetup : IAreaSetup
         var containerList = serviceProvider.GetRequiredService<ContainerListCommand>();
         cosmosContainer.AddCommand(containerList.Name, containerList);
 
+        // Register container create command
+        var containerCreate = serviceProvider.GetRequiredService<ContainerCreateCommand>();
+        cosmosContainer.AddCommand(containerCreate.Name, containerCreate);
+
         var accountList = serviceProvider.GetRequiredService<AccountListCommand>();
         cosmosAccount.AddCommand(accountList.Name, accountList);
 
         var itemQuery = serviceProvider.GetRequiredService<ItemQueryCommand>();
         cosmosItem.AddCommand(itemQuery.Name, itemQuery);
+
+        // Register new item CRUD commands
+        var itemCreate = serviceProvider.GetRequiredService<ItemCreateCommand>();
+        cosmosItem.AddCommand(itemCreate.Name, itemCreate);
+
+        var itemUpsert = serviceProvider.GetRequiredService<ItemUpsertCommand>();
+        cosmosItem.AddCommand(itemUpsert.Name, itemUpsert);
+
+        var itemGet = serviceProvider.GetRequiredService<ItemGetCommand>();
+        cosmosItem.AddCommand(itemGet.Name, itemGet);
+
+        var itemDelete = serviceProvider.GetRequiredService<ItemDeleteCommand>();
+        cosmosItem.AddCommand(itemDelete.Name, itemDelete);
 
         return cosmos;
     }

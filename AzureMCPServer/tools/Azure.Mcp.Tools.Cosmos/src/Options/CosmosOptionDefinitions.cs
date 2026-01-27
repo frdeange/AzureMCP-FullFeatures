@@ -9,6 +9,11 @@ public static class CosmosOptionDefinitions
     public const string DatabaseName = "database";
     public const string ContainerName = "container";
     public const string QueryText = "query";
+    public const string PartitionKeyName = "partitionKey";
+    public const string ItemName = "item";
+    public const string ItemIdName = "itemId";
+    public const string PartitionKeyPathName = "partitionKeyPath";
+    public const string ThroughputName = "throughput";
 
     public static readonly Option<string> Account = new(
         $"--{AccountName}"
@@ -41,5 +46,45 @@ public static class CosmosOptionDefinitions
         Description = "SQL query to execute against the container. Uses Cosmos DB SQL syntax.",
         Required = false,
         DefaultValueFactory = _ => "SELECT * FROM c"
+    };
+
+    public static readonly Option<string> PartitionKey = new(
+        $"--{PartitionKeyName}"
+    )
+    {
+        Description = "The partition key value for the item.",
+        Required = true
+    };
+
+    public static readonly Option<string> Item = new(
+        $"--{ItemName}"
+    )
+    {
+        Description = "The JSON document to create or update.",
+        Required = true
+    };
+
+    public static readonly Option<string> ItemId = new(
+        $"--{ItemIdName}"
+    )
+    {
+        Description = "The unique identifier of the item to read or delete.",
+        Required = true
+    };
+
+    public static readonly Option<string> PartitionKeyPath = new(
+        $"--{PartitionKeyPathName}"
+    )
+    {
+        Description = "The partition key path for the container (e.g., /productFamily).",
+        Required = true
+    };
+
+    public static readonly Option<int?> Throughput = new(
+        $"--{ThroughputName}"
+    )
+    {
+        Description = "The provisioned throughput in RU/s for the container. If not specified, serverless or autoscale is used.",
+        Required = false
     };
 }
