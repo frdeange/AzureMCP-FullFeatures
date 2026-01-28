@@ -36,7 +36,7 @@ jobs:
         dotnet-version: ${{ env.DOTNET_VERSION }}
 
     - name: Restore dependencies
-      run: dotnet restore AzureMCPServer/AzureMcp.sln
+      run: dotnet restore AzureMCPServer/servers/Azure.Mcp.Server/src/Azure.Mcp.Server.csproj
 
     - name: Build and Publish
       run: |
