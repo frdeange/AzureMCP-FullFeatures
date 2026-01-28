@@ -6,6 +6,7 @@ using System.Text.Json.Serialization;
 namespace Azure.Mcp.Tools.Cosmos.Commands;
 
 [JsonSerializable(typeof(ContainerListCommand.ContainerListCommandResult))]
+[JsonSerializable(typeof(ContainerGetCommand.ContainerGetCommandResult))]
 [JsonSerializable(typeof(AccountListCommand.AccountListCommandResult))]
 [JsonSerializable(typeof(DatabaseListCommand.DatabaseListCommandResult))]
 [JsonSerializable(typeof(ItemQueryCommand.ItemQueryCommandResult))]

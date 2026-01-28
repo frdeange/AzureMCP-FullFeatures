@@ -124,6 +124,21 @@ public interface ICosmosService : IDisposable
         string? tenant = null,
         RetryPolicyOptions? retryPolicy = null,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Gets container metadata including partition key path, throughput, indexing policy, etc.
+    /// </summary>
+    /// <returns>Container metadata as a JsonElement.</returns>
+    /// <exception cref="Exception">Throws with status code 404 if container not found.</exception>
+    Task<JsonElement> GetContainerAsync(
+        string accountName,
+        string databaseName,
+        string containerName,
+        string subscription,
+        AuthMethod authMethod = AuthMethod.Credential,
+        string? tenant = null,
+        RetryPolicyOptions? retryPolicy = null,
+        CancellationToken cancellationToken = default);
 }
 
 /// <summary>

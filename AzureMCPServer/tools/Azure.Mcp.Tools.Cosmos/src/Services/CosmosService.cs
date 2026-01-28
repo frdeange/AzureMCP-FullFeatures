@@ -611,6 +611,144 @@ public class CosmosService(ISubscriptionService subscriptionService, ITenantServ
         }
     }
 
+    public async Task<JsonElement> GetContainerAsync(
+        string accountName,
+        string databaseName,
+        string containerName,
+        string subscription,
+        AuthMethod authMethod = AuthMethod.Credential,
+        string? tenant = null,
+        RetryPolicyOptions? retryPolicy = null,
+        CancellationToken cancellationToken = default)
+    {
+        ValidateRequiredParameters(
+            (nameof(accountName), accountName),
+            (nameof(databaseName), databaseName),
+            (nameof(containerName), containerName),
+            (nameof(subscription), subscription));
+
+        var client = await GetCosmosClientAsync(accountName, subscription, authMethod, tenant, retryPolicy, cancellationToken);
+
+        try
+        {
+            var container = client.GetContainer(databaseName, containerName);
+
+            // Read container properties using stream API (AOT compatible)
+            using var response = await container.ReadContainerStreamAsync(cancellationToken: cancellationToken);
+            if (!response.IsSuccessStatusCode)
+            {
+                if (response.StatusCode == HttpStatusCode.NotFound)
+                {
+                    throw new Exception($"404 NotFound: Container '{containerName}' not found in database '{databaseName}'");
+                }
+                throw new Exception($"{(int)response.StatusCode} {response.StatusCode}: {response.ErrorMessage}");
+            }
+
+            using var doc = await JsonDocument.ParseAsync(response.Content, cancellationToken: cancellationToken);
+            var containerProperties = doc.RootElement.Clone();
+
+            // Try to get throughput (returns null for serverless)
+            int? throughput = null;
+            try
+            {
+                throughput = await container.ReadThroughputAsync(cancellationToken);
+            }
+            catch (CosmosException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
+            {
+                // Throughput not configured at container level (might be at database level or serverless)
+                throughput = null;
+            }
+
+            // Build result with container properties and throughput using Utf8JsonWriter (AOT compatible)
+            using var memoryStream = new MemoryStream();
+            using (var writer = new Utf8JsonWriter(memoryStream))
+            {
+                writer.WriteStartObject();
+
+                // Copy relevant properties from container response
+                if (containerProperties.TryGetProperty("id", out var idProp))
+                {
+                    writer.WriteString("id", idProp.GetString());
+                }
+
+                if (containerProperties.TryGetProperty("partitionKey", out var pkProp))
+                {
+                    if (pkProp.TryGetProperty("paths", out var pathsProp))
+                    {
+                        var paths = new List<string>();
+                        foreach (var path in pathsProp.EnumerateArray())
+                        {
+                            var pathStr = path.GetString();
+                            if (pathStr != null) paths.Add(pathStr);
+                        }
+
+                        if (paths.Count > 0)
+                        {
+                            writer.WriteString("partitionKeyPath", paths[0]);
+                        }
+
+                        writer.WriteStartArray("partitionKeyPaths");
+                        foreach (var p in paths)
+                        {
+                            writer.WriteStringValue(p);
+                        }
+                        writer.WriteEndArray();
+                    }
+                }
+
+                if (containerProperties.TryGetProperty("defaultTtl", out var ttlProp))
+                {
+                    writer.WriteNumber("defaultTimeToLive", ttlProp.GetInt32());
+                }
+
+                if (containerProperties.TryGetProperty("indexingPolicy", out var indexProp))
+                {
+                    writer.WritePropertyName("indexingPolicy");
+                    indexProp.WriteTo(writer);
+                }
+
+                if (containerProperties.TryGetProperty("uniqueKeyPolicy", out var uniqueProp))
+                {
+                    writer.WritePropertyName("uniqueKeyPolicy");
+                    uniqueProp.WriteTo(writer);
+                }
+
+                if (containerProperties.TryGetProperty("_etag", out var etagProp))
+                {
+                    writer.WriteString("etag", etagProp.GetString());
+                }
+
+                if (containerProperties.TryGetProperty("_ts", out var tsProp))
+                {
+                    writer.WriteNumber("lastModifiedTimestamp", tsProp.GetInt64());
+                }
+
+                if (throughput.HasValue)
+                {
+                    writer.WriteNumber("throughput", throughput.Value);
+                }
+                else
+                {
+                    writer.WriteNull("throughput");
+                }
+
+                writer.WriteEndObject();
+            }
+
+            memoryStream.Position = 0;
+            using var resultDoc = await JsonDocument.ParseAsync(memoryStream, cancellationToken: cancellationToken);
+            return resultDoc.RootElement.Clone();
+        }
+        catch (CosmosException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
+        {
+            throw new Exception($"404 NotFound: Container '{containerName}' not found in database '{databaseName}'", ex);
+        }
+        catch (Exception ex) when (ex is not Exception { Message: string msg } || !msg.StartsWith("404"))
+        {
+            throw new Exception($"Error getting container '{containerName}': {ex.Message}", ex);
+        }
+    }
+
     protected virtual async void Dispose(bool disposing)
     {
         if (!_disposed)

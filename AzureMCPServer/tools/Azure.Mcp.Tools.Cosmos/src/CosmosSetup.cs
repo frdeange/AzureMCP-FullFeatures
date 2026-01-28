@@ -28,6 +28,7 @@ public class CosmosSetup : IAreaSetup
         services.AddSingleton<ItemGetCommand>();
         services.AddSingleton<ItemDeleteCommand>();
         services.AddSingleton<ContainerCreateCommand>();
+        services.AddSingleton<ContainerGetCommand>();
     }
 
     public CommandGroup RegisterCommands(IServiceProvider serviceProvider)
@@ -58,6 +59,10 @@ public class CosmosSetup : IAreaSetup
         // Register container create command
         var containerCreate = serviceProvider.GetRequiredService<ContainerCreateCommand>();
         cosmosContainer.AddCommand(containerCreate.Name, containerCreate);
+
+        // Register container get command
+        var containerGet = serviceProvider.GetRequiredService<ContainerGetCommand>();
+        cosmosContainer.AddCommand(containerGet.Name, containerGet);
 
         var accountList = serviceProvider.GetRequiredService<AccountListCommand>();
         cosmosAccount.AddCommand(accountList.Name, accountList);

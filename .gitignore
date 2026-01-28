@@ -32,3 +32,6 @@ eng/tools/ToolDescriptionEvaluator/tools.json
 infrastructure/**/*.json
 !infrastructure/**/bicepconfig.json
 !infrastructure/**/parameters.json
+
+# Publish output
+publish/
