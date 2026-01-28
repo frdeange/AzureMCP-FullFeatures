@@ -2,6 +2,7 @@
     "image": "mcr.microsoft.com/devcontainers/dotnet:dev-10.0-preview",
     "name": "Microsoft MCP Codespace",
     "features": {
+        "ghcr.io/devcontainers/features/docker-outside-of-docker:1": {},
         "ghcr.io/devcontainers/features/node:1": {
             "version": "20"
         },
@@ -30,6 +31,9 @@
             }
         }
     },
+    "mounts": [
+        "type=bind,source=/var/run/docker.sock,target=/var/run/docker.sock"
+    ],
     "remoteUser": "vscode",
     "postCreateCommand": "dotnet --version && az --version && azd version && pwsh --version && npm --version"
 }

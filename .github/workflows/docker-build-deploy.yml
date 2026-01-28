@@ -1,0 +1,141 @@
+name: Build and Deploy to Azure Container App
+
+on:
+  workflow_dispatch:
+    inputs:
+      deploy:
+        description: 'Deploy to Container App after build'
+        required: true
+        default: 'true'
+        type: boolean
+  push:
+    branches: [main]
+    paths:
+      - 'AzureMCPServer/**'
+      - '.github/workflows/docker-build-deploy.yml'
+
+env:
+  REGISTRY: distriplatformacr.azurecr.io
+  IMAGE_NAME: azure-mcp-server
+  RESOURCE_GROUP: RG-DistriAgentPlatform
+  CONTAINER_APP_NAME: azure-mcp-server
+  DOTNET_VERSION: '10.0.x'
+
+jobs:
+  build:
+    name: Build .NET Application
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: ${{ env.DOTNET_VERSION }}
+
+    - name: Restore dependencies
+      run: dotnet restore AzureMCPServer/AzureMcp.sln
+
+    - name: Build and Publish
+      run: |
+        dotnet publish AzureMCPServer/servers/Azure.Mcp.Server/src/Azure.Mcp.Server.csproj \
+          -c Release \
+          -o ./publish \
+          --self-contained true \
+          -r linux-musl-x64 \
+          -p:PublishSingleFile=false
+
+    - name: Upload publish artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: publish-output
+        path: ./publish
+        retention-days: 1
+
+  push:
+    name: Build and Push Docker Image
+    runs-on: ubuntu-latest
+    needs: build
+    outputs:
+      image-tag: ${{ steps.meta.outputs.tags }}
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Download publish artifact
+      uses: actions/download-artifact@v4
+      with:
+        name: publish-output
+        path: ./publish
+
+    - name: Azure Login
+      uses: azure/login@v2
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+    - name: Login to ACR
+      run: az acr login --name distriplatformacr
+
+    - name: Generate image metadata
+      id: meta
+      run: |
+        SHORT_SHA=$(echo ${{ github.sha }} | cut -c1-7)
+        echo "short-sha=$SHORT_SHA" >> $GITHUB_OUTPUT
+        echo "tags=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:$SHORT_SHA" >> $GITHUB_OUTPUT
+
+    - name: Build Docker image
+      run: |
+        docker build \
+          --build-arg PUBLISH_DIR=./publish \
+          --build-arg EXECUTABLE_NAME=azmcp \
+          -t ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest \
+          -t ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.short-sha }} \
+          -f AzureMCPServer/Dockerfile \
+          .
+
+    - name: Push Docker image
+      run: |
+        docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+        docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.short-sha }}
+
+    - name: Output image info
+      run: |
+        echo "### 🐳 Docker Image Published" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "**Images pushed:**" >> $GITHUB_STEP_SUMMARY
+        echo "- \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest\`" >> $GITHUB_STEP_SUMMARY
+        echo "- \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.short-sha }}\`" >> $GITHUB_STEP_SUMMARY
+
+  deploy:
+    name: Deploy to Container App
+    runs-on: ubuntu-latest
+    needs: push
+    if: ${{ github.event_name == 'push' || github.event.inputs.deploy == 'true' }}
+    
+    steps:
+    - name: Azure Login
+      uses: azure/login@v2
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+    - name: Get short SHA
+      id: sha
+      run: echo "short=$(echo ${{ github.sha }} | cut -c1-7)" >> $GITHUB_OUTPUT
+
+    - name: Update Container App
+      run: |
+        az containerapp update \
+          --name ${{ env.CONTAINER_APP_NAME }} \
+          --resource-group ${{ env.RESOURCE_GROUP }} \
+          --image ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.sha.outputs.short }}
+
+    - name: Output deployment info
+      run: |
+        echo "### 🚀 Deployment Complete" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "**Container App:** \`${{ env.CONTAINER_APP_NAME }}\`" >> $GITHUB_STEP_SUMMARY
+        echo "**Image:** \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.sha.outputs.short }}\`" >> $GITHUB_STEP_SUMMARY
+        echo "**Resource Group:** \`${{ env.RESOURCE_GROUP }}\`" >> $GITHUB_STEP_SUMMARY
